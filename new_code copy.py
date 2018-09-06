@@ -133,14 +133,22 @@ def col_project(image, end_height):
     column_list = []
     start_t = 0
 
-    for j in range(len(col_pro_val) - 3):
+    j = 0
+    # for j in range(len(col_pro_val) - 3):
+    start_t = -1
+    while j < len(col_pro_val) - 3:
         if col_pro_val[0] and j == 0:
             start_t = 0
         if col_pro_val[j] == 0 and col_pro_val[j + 1] > 0:
             start_t = j
         if col_pro_val[j] > 0 and col_pro_val[j + 1] == 0 and col_pro_val[j + 2] == 0\
                 and col_pro_val[j + 3] == 0:
-            column_list.append([start_t, j + 1])
+            if start_t != -1:
+                column_list.append([start_t, j + 1])
+                start_t = -1
+
+                j += 5 ## 新增
+        j += 1
 
     if col_pro_val[len(col_pro_val) - 1]:
         column_list.append([start_t, len(col_pro_val) - 1])
@@ -261,6 +269,19 @@ def rotate_image(image):
 
             lines.append([start_x, start_y, end_x, end_y])
 
+    maxlen = 0
+    xp = 0
+    xq = 0
+    for line in lines:
+        x0, y0, x1, y1 = line
+        length = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+
+        if abs(x0 - x1) > abs(y0 - y1):
+            if maxlen < length:
+                maxlen = length
+                xp = x0
+                xq = x1
+
     # cv2.namedWindow("src", 0)
     # cv2.imshow("src", image)
     # cv2.waitKey(0)
@@ -295,12 +316,12 @@ def rotate_image(image):
         rotate_matrix = cv2.getRotationMatrix2D((x0, y0), avg_angle, 1.0)
         rotated_img = cv2.warpAffine(image, rotate_matrix, (width_t, height_t), borderValue=(255, 255, 255))
 
-        return rotated_img
+        return rotated_img, xp, xq
     else:
-        return image
+        return image, xp, xq
 
 
-def get_mode(values):
+def get_mode(values, diffv=4):
     if len(values) == 0:
         return 0
 
@@ -308,8 +329,8 @@ def get_mode(values):
     count = 0
     idx = 0
     for item in values:
-        if count < len(np.where(np.abs(values - item) < 4)[0]):
-            count = len(np.where(np.abs(values - item) < 4)[0])
+        if count < len(np.where(np.abs(values - item) < diffv)[0]):
+            count = len(np.where(np.abs(values - item) < diffv)[0])
             idx = item
 
     return idx
@@ -324,6 +345,7 @@ def process(imgp, colInfo, shotname):
     else:
         img = imgp.copy()
 
+    # cv2.imwrite("/Users/caicloud/Desktop/result_SB/src_img.jpg", img)
     coord =[]
     items = []
     result = {}
@@ -335,8 +357,18 @@ def process(imgp, colInfo, shotname):
     writer = csv.writer(csv_file)
 
     # gray_img = img[:, :, 2]
-    rotate_img = rotate_image(img)
-    rotate_imgp = rotate_img.copy()
+    rotate_imgp, xp, xq = rotate_image(img)
+    # if xq - xp < 0.8 * rotate_imgp.shape[1]:
+    #     rotate_img = rotate_imgp.copy()
+    # else:
+    #     rotate_img = rotate_imgp[:, xp: xq]
+
+    cut_len = 30
+    if rotate_imgp.shape[1] < 60:
+        return [], []
+
+    rotate_img = rotate_imgp[:, cut_len: rotate_imgp.shape[1] - cut_len]
+    # rotate_imgp = rotate_img.copy()
     gray = rotate_img[:, :, 2]
     height, width = gray.shape
 
@@ -455,6 +487,8 @@ def process(imgp, colInfo, shotname):
     #     line_pos -= 1
     if flag == 1:
         thrd = rect_list[pos_h][4] - 10
+        if thrd < 0:
+            thrd = 65
     else:
         thrd = 65
 
@@ -566,7 +600,7 @@ def process(imgp, colInfo, shotname):
             continue
         result = recognizer.recognize(line_image)
 
-        if "项目" in result or "名称" in result or "单价" in result:
+        if "项目" in result or "名称" in result or "单价" in result or "金额" in result:
             tmp_result = ("名称", "价格", "数量", "金额")
             writer.writerow(tmp_result)
             break
@@ -581,32 +615,47 @@ def process(imgp, colInfo, shotname):
     cut_img = rotate_img[rect_list[index][1]:, :]
     col_list, dilate_img = col_project(cut_img, end_h)
 
-    if len(col_list) != colNum:
-        ch_w = [x[2] for x in boxes]
-        modew = get_mode(ch_w)
+    # if len(col_list) != colNum:
+    #     ch_w = [x[2] for x in boxes]
+    #     modew = get_mode(ch_w)
+    #
+    #     remove_idx = []
+    #     for c_i in range(0, len(col_list)):
+    #         if col_list[c_i][1] - col_list[c_i][0] < 2 * modew:
+    #             remove_idx.append(c_i)
+    #         else:
+    #             break
+    #
+    #     # c_i = len(col_list) - 1
+    #     # while c_i >= 0:
+    #     #     if col_list[c_i][1] - col_list[c_i][0] < 2 * modew:
+    #     #         remove_idx.append(c_i)
+    #     #     else:
+    #     #         break
+    #     #     c_i -= 1
+    #
+    #     if len(remove_idx) > 0:
+    #         col_list_t = []
+    #         for c_i in range(0, len(col_list)):
+    #             if c_i not in remove_idx:
+    #                 col_list_t.append(col_list[c_i])
+    #
+    #         col_list = col_list_t.copy()
 
-        remove_idx = []
-        for c_i in range(0, len(col_list)):
-            if col_list[c_i][1] - col_list[c_i][0] < 2 * modew:
-                remove_idx.append(c_i)
-            else:
-                break
-
-        # c_i = len(col_list) - 1
-        # while c_i >= 0:
-        #     if col_list[c_i][1] - col_list[c_i][0] < 2 * modew:
-        #         remove_idx.append(c_i)
-        #     else:
-        #         break
-        #     c_i -= 1
-
-        if len(remove_idx) > 0:
-            col_list_t = []
-            for c_i in range(0, len(col_list)):
-                if c_i not in remove_idx:
-                    col_list_t.append(col_list[c_i])
-
-            col_list = col_list_t.copy()
+    # maxRg = 0
+    # idx = 0
+    # for p in range(0, len(col_list)):
+    #     startr, endr = col_list[p]
+    #     if endr - startr > maxRg:
+    #         maxRg = endr - startr
+    #         idx = p
+    #
+    # p = idx + 1
+    # startp = col_list[idx][0]
+    # endp = col_list[idx][1]
+    # while p < len(col_list):
+    #     startr, endr = col_list[p]
+    #     if startr - endp < 3 * modew
 
     # for line in col_list:
     #     cv2.line(rotate_img, (line[0], 0), (line[0], height), (255, 0, 0), 2)
@@ -638,6 +687,78 @@ def process(imgp, colInfo, shotname):
             col_rect.append(new_col_line)
 
         p += 1
+
+    # maxcol = []
+    # for p in range(0, len(col_rect)):
+    #     column = [sx[p][2] - sx[p][0] for sx in col_rect]
+    #     maxV = np.max(column)
+    #
+    #     maxcol.append(maxV)
+    #
+    # maxV = np.max(maxcol)
+    # maxidx = 0
+    # for p in range(0, len(maxcol)):
+    #     if maxcol[p] == maxV:
+    #         maxidx = p
+    #         break
+    #
+    # for p in range(0, len(col_rect)):
+    maxidx = []
+    line_num = 0
+    for p in range(0, len(col_rect)):
+        rows = col_rect[p]
+        col_width = [sx[2] - sx[0] for sx in rows]
+        if len(col_width) == 0:
+            continue
+
+        maxV = np.max(col_width)
+
+        idxm = 0
+        for q in range(0, len(rows)):
+            if maxV == rows[q][2] - rows[q][0]:
+                idxm = q
+                break
+
+        numT = 0
+        for q in range(0, len(rows)):
+            if maxV == rows[q][2] - rows[q][0]:
+                numT += 1
+
+        if numT > 1:
+            line_num += 1
+
+        maxidx.append(idxm)
+
+    if line_num > 0.6 * len(col_rect):
+        modev = get_mode(maxidx, 1)
+
+        col_rectp = []
+        for p in range(0, len(col_rect)):
+            rows = col_rect[p]
+
+            if len(rows) == 0:
+                continue
+
+            q = 0
+            col_rect_line = []
+            while q <= modev:
+                col_rect_line.append(rows[q])
+
+                q += 1
+
+            q = modev + 1
+            while q < len(rows):
+                if rows[q][0] != rows[modev][0] and rows[q][2] != rows[modev][2]:
+                    col_rect_line.append(rows[q])
+
+                q += 1
+
+            if len(col_rect_line) == 1:
+                col_rectp.append(rows)
+            else:
+                col_rectp.append(col_rect_line)
+
+        col_rect = col_rectp.copy()
 
     p = 0
     lineV = []
@@ -686,12 +807,22 @@ def process(imgp, colInfo, shotname):
         else:
             pos_sd.append([0, 0])
 
+    col_num = []
+    for p in range(0, len(col_rect)):
+        if p not in lineV:
+            col_line_list = col_rect[p]
+
+            col_num.append(len(col_line_list))
+
+    col_num_mode = get_mode(col_num, 1)
+
     p = 0
     numL = 0
     while p < len(col_rect):
         if p not in lineV:
             col_line_list = col_rect[p]
-            if len(col_line_list) == len(col_list):
+            # if len(col_line_list) == len(col_list):
+            if len(col_line_list) == col_num_mode:
                 for c_i in range(0, len(col_line_list)):
                     start, y0,  end, y1 = col_line_list[c_i]
                     posS, posE = pos_sd[c_i]
@@ -730,7 +861,6 @@ def process(imgp, colInfo, shotname):
 
             p += 1
 
-    
     # p = 0
     # while p < len(col_rect):
     #     col_line_list = col_rect[p]
@@ -777,6 +907,8 @@ def process(imgp, colInfo, shotname):
         if len(col_line_list) < 4:
             for col_line in col_line_list:
                 start, starty, end, endy = col_line
+                if end - start <= 0:
+                    continue
                 pic_img = rotate_img[starty: endy, start: end]
                 result = recognizer.recognize(pic_img)
                 tmp_result += (result,)
@@ -790,6 +922,10 @@ def process(imgp, colInfo, shotname):
         while real_index < len(col_line_list):
             col_line = col_line_list[real_index]
             start, starty, end, endy = col_line
+            if end - start == 0:
+                real_index += 1
+                continue
+
             pic_img = rotate_img[starty: endy, start: end]
             result = recognizer.recognize(pic_img)
 
@@ -845,6 +981,9 @@ def process(imgp, colInfo, shotname):
 
         for col_index, col_line in enumerate(col_line_list):
             start, starty, end, endy = col_line
+            if end - start == 0:
+                continue
+
             pic_img = rotate_img[starty: endy, start: end]
             result = recognizer.recognize(pic_img)
             result = price_regex.sub('', result)
@@ -1095,7 +1234,7 @@ def process(imgp, colInfo, shotname):
 
 image_list = glob.glob("/Users/caicloud/PROJECT/Social Security/pic/pic/浙江大学医学院/复旦大学附属中山医院/徐玉华/*.jpg")
 for image_path in image_list:
-    image_path = "/Users/caicloud/PROJECT/Social Security/pic/pic/浙江大学医学院/[0831]浙江大学医学院附属第一医院/朱增珍/Image_00002.jpg"
+    image_path = "/Users/caicloud/PROJECT/Social Security/pic/pic/浙江大学医学院/复旦大学附属中山医院/朱汉根/Image_00006.jpg"
     (filepath, tempfilename) = os.path.split(image_path)
     (shotname, extension) = os.path.splitext(tempfilename)
     print(image_path)
@@ -1113,7 +1252,7 @@ for image_path in image_list:
     #
 
     colInfo = [6, 0, 1, 2, 3]
-    hostipalName = "浙江大学第一附属医院"
+    hostipalName = "复旦大学附属中山医院"
     if hostipalName == "复旦大学附属中山医院":
         colInfo.append(-1)
     else:
